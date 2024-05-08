@@ -1,7 +1,82 @@
 import numpy as np
+import numba as nb
 import pyarma as pa
+from pympler import asizeof
+from time import time
+from math import factorial
+from typing import Union, List, Generator
+from collections import defaultdict
 from CommonFunctions import generate_basis_states
 from OperatorFunctions import s_z, calculate_interaction
+from BitFunctions import (integer_to_bitarray,
+                          integer_to_bitstring,
+                          bitarray_to_integer, flip,
+                          count_ones_and_zeros_difference,
+                          count_number_of_ones)
+
+
+class HamiltonianSandvik:
+
+    def __init__(self, L: int, J: float, delta: float, is_pbc: bool = False):
+        self.L: int = L
+        self.J: float = J
+        self.delta: float = delta
+        self.pbc: bool = is_pbc
+        self.system_size: int = 2 ** L
+        self.Sz_total = None
+
+        self.H_dict: defaultdict[tuple[int, int], float] = defaultdict(float)
+
+    def construct_hamiltonian(self, magnetization: int = None):
+        basis = range(self.system_size) if magnetization is None \
+            else self.magnetization_basis(magnetization)
+        self.Sz_total = magnetization
+        for a in basis:
+            a_bin = integer_to_bitarray(a, self.L)
+            for i in range(self.L):
+                j = i + 1
+                if self.pbc:
+                    j = (i + 1) % self.L
+                else:
+                    if j == self.L:
+                        break
+                if a_bin[i] == a_bin[j]:
+                    self.H_dict[(a, a)] += 1
+                else:
+                    self.H_dict[(a, a)] -= 1
+                    b = bitarray_to_integer(flip(a_bin, [i, j]))
+                    self.H_dict[(a, b)] = self.J / 2
+            self.H_dict[(a, a)] *= self.delta * self.J / 4
+
+    def magnetization_basis(self, magnetization: int) -> Generator:
+        for s in range(self.system_size):
+            if count_ones_and_zeros_difference(s, self.L) == magnetization:
+                yield s
+
+    def count_number_of_magnetization_block_states(self, magnetization: int) -> int:
+        return len(list(self.magnetization_basis(magnetization)))
+
+    def get_hamiltonian_as_dense_matrix(self) -> np.ndarray:
+        hamiltonian = np.zeros((self.system_size, self.system_size))
+        for (i, j), value in self.H_dict.items():
+            hamiltonian[i, j] = value
+        return hamiltonian
+
+    def print_matrix(self):
+
+        print(f'System size: {self.system_size} x {self.system_size}')
+        print('Basis:')
+        print(end=(9 - self.L) * ' ')
+        for basis_state in generate_basis_states(0, self.system_size, self.L,
+                                                 block=False if self.Sz_total is None else True,
+                                                 total_spin=self.Sz_total / 2 if self.Sz_total is not None else 0):
+            print(basis_state, end=(9 - self.L) * ' ')
+        print('\n')
+        if self.Sz_total is None:
+            pa.mat(self.get_hamiltonian_as_dense_matrix()).print()
+        else:
+            m_basis = list(self.magnetization_basis(self.Sz_total))
+            pa.mat(self.get_hamiltonian_as_dense_matrix()[m_basis][:, m_basis]).print()
 
 
 class Hamiltonian:
@@ -122,3 +197,36 @@ class Hamiltonian:
         self.reset_hamiltonian()
         self._prepare_hamiltonian_p()
         self._prepare_hamiltonian_k()
+
+
+if __name__ == '__main__':
+    L, J, delta = 4, 1, 1
+    pbc = False
+    m = 3
+
+    # time_start = time()
+    # # up to L = 14
+    # h = Hamiltonian(L=L, J=J, delta=delta, is_pbc=pbc)
+    # h.prepare_hamiltonian()
+    # h.print_matrix()
+    # time_end = time()
+    # print(f'Time: {time_end - time_start:0.4f} seconds')
+    # print(f'{asizeof.asizeof(h.matrix) / 1_000_000:0.4f} MB')
+    #
+    time_start = time()
+    # # up to L = 19, compared with other one L = 14
+    hs = HamiltonianSandvik(L=L, J=J, delta=delta, is_pbc=pbc)
+    hs.construct_hamiltonian(magnetization=2)
+    hs.print_matrix()
+    time_end = time()
+    print(f'Time: {time_end - time_start:0.4f} seconds')
+    print(f'{asizeof.asizeof(hs.H_dict) / 1_000_000:0.4f} MB')
+    # for i in hs.magnetization_basis(magnetization=m):
+    #     print(f'{i}: {integer_to_bitstring(i, L)}')
+    # m_list = list(hs.magnetization_basis(magnetization=m))
+    # print(m_list, len(m_list))
+    # print(hs.count_number_of_magnetization_block_states(m))
+    c = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+    print(c)
+    print(c[[0, 1]][:, [0, 1]])
+
