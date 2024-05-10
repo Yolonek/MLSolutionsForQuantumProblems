@@ -12,7 +12,8 @@ from BitFunctions import (integer_to_bitarray,
                           integer_to_bitstring,
                           bitarray_to_integer, flip,
                           count_ones_and_zeros_difference,
-                          count_number_of_ones)
+                          count_number_of_ones,
+                          shift_bits_of_integer)
 
 
 class HamiltonianSandvik:
@@ -23,14 +24,28 @@ class HamiltonianSandvik:
         self.delta: float = delta
         self.pbc: bool = is_pbc
         self.system_size: int = 2 ** L
-        self.Sz_total = None
-
+        self.magnetization = None
+        self.momentum = None
         self.H_dict: defaultdict[tuple[int, int], float] = defaultdict(float)
 
-    def construct_hamiltonian(self, magnetization: int = None):
-        basis = range(self.system_size) if magnetization is None \
-            else self.magnetization_basis(magnetization)
-        self.Sz_total = magnetization
+    def reset_data(self):
+        self.H_dict: defaultdict[tuple[int, int], float] = defaultdict(float)
+        self.magnetization = None
+
+    def choose_basis(self, magnetization: int = None, momentum: int = None):
+        if magnetization is None and momentum is None:
+            return range(self.system_size)
+        elif magnetization is not None and momentum is None:
+            return self.magnetization_basis(magnetization)
+        elif magnetization is None and momentum is not None:
+            return self.momentum_basis(momentum)
+        else:
+            return self.momentum_basis(momentum, magnetization=magnetization)
+
+    def construct_hamiltonian(self, magnetization: int = None, momentum: int = None):
+        basis = self.choose_basis(magnetization, momentum)
+        self.magnetization = magnetization
+        self.momentum = momentum
         for a in basis:
             a_bin = integer_to_bitarray(a, self.L)
             for i in range(self.L):
@@ -44,20 +59,50 @@ class HamiltonianSandvik:
                     self.H_dict[(a, a)] += 1
                 else:
                     self.H_dict[(a, a)] -= 1
-                    b = bitarray_to_integer(flip(a_bin, [i, j]))
-                    self.H_dict[(a, b)] = self.J / 2
+                    if self.momentum is not None:
+                        pass
+                    else:
+                        b = bitarray_to_integer(flip(a_bin, [i, j]))
+                        self.H_dict[(a, b)] = self.J / 2
             self.H_dict[(a, a)] *= self.delta * self.J / 4
 
     def magnetization_basis(self, magnetization: int) -> Generator:
-        for s in range(self.system_size):
-            if count_ones_and_zeros_difference(s, self.L) == magnetization:
-                yield s
+        for state in range(self.system_size):
+            if count_ones_and_zeros_difference(state, self.L) == magnetization:
+                yield state
 
     def count_number_of_magnetization_block_states(self, magnetization: int) -> int:
         return len(list(self.magnetization_basis(magnetization)))
 
+    def momentum_basis(self, momentum: int, magnetization: int = 0, with_r: bool = False) -> Generator:
+        for state in self.magnetization_basis(magnetization):
+            representative = MomentumStatesCalculator(self.L, momentum).check_state_for_representatives(state)
+            if representative >= 0:
+                if with_r:
+                    yield state, representative
+                else:
+                    yield state
+
+    def count_number_of_momentum_block_states(self, k: int) -> int:
+        return len(list(self.momentum_basis(k)))
+
+    def convert_matrix_coordinates_to_block(self):
+        basis = self.choose_basis(self.magnetization, self.momentum)
+        new_H_dict = defaultdict(float)
+        for (i, j), value in self.H_dict.items():
+            i_m = basis.index(i)
+            if i == j:
+                new_H_dict[(i_m, i_m)] = value
+            else:
+                new_H_dict[(i_m, basis.index(j))] = value
+        self.H_dict = new_H_dict
+
     def get_hamiltonian_as_dense_matrix(self) -> np.ndarray:
-        hamiltonian = np.zeros((self.system_size, self.system_size))
+        if self.magnetization is not None or self.momentum is not None:
+            basis_length = len(list(self.choose_basis(self.magnetization, self.momentum)))
+            hamiltonian = np.zeros((basis_length, basis_length))
+        else:
+            hamiltonian = np.zeros((self.system_size, self.system_size))
         for (i, j), value in self.H_dict.items():
             hamiltonian[i, j] = value
         return hamiltonian
@@ -68,15 +113,45 @@ class HamiltonianSandvik:
         print('Basis:')
         print(end=(9 - self.L) * ' ')
         for basis_state in generate_basis_states(0, self.system_size, self.L,
-                                                 block=False if self.Sz_total is None else True,
-                                                 total_spin=self.Sz_total / 2 if self.Sz_total is not None else 0):
+                                                 block=False if self.magnetization is None else True,
+                                                 total_spin=self.magnetization / 2 if self.magnetization is not None else 0):
             print(basis_state, end=(9 - self.L) * ' ')
         print('\n')
-        if self.Sz_total is None:
-            pa.mat(self.get_hamiltonian_as_dense_matrix()).print()
-        else:
-            m_basis = list(self.magnetization_basis(self.Sz_total))
-            pa.mat(self.get_hamiltonian_as_dense_matrix()[m_basis][:, m_basis]).print()
+        #     pa.mat(self.get_hamiltonian_as_dense_matrix()[m_basis][:, m_basis]).print()
+        pa.mat(self.get_hamiltonian_as_dense_matrix()).print()
+
+
+class MomentumStatesCalculator:
+
+    def __init__(self, N: int, k: int = 0):
+        self.k: int = k
+        self.N: int = N
+
+    def check_state_for_representatives(self, state: int) -> int:
+        representative: int = -1
+        temp_representative: int = state
+        for i in range(1, self.N + 1):
+            temp_representative = shift_bits_of_integer(temp_representative, self.N, -1)
+            if temp_representative < state:
+                continue
+            elif temp_representative == state:
+                if self.k % (self.N / i) != 0:
+                    continue
+                representative = i
+        return representative
+
+    def find_smallest_representative(self, state: int) -> tuple[int, int]:
+        representative: int = state
+        temp_representative: int = state
+        num_of_translations: int = 0
+        for i in range(1, self.N):
+            temp_representative = shift_bits_of_integer(temp_representative, self.N, -1)
+            if temp_representative < representative:
+                representative = temp_representative
+                num_of_translations = i
+        return representative, num_of_translations
+
+
 
 
 class Hamiltonian:
@@ -200,33 +275,31 @@ class Hamiltonian:
 
 
 if __name__ == '__main__':
-    L, J, delta = 4, 1, 1
+    L, J, delta = 6, 1, 1
     pbc = False
-    m = 3
+    m = 0
+    k = 2
 
     # time_start = time()
     # # up to L = 14
-    # h = Hamiltonian(L=L, J=J, delta=delta, is_pbc=pbc)
+    # h = Hamiltonian(L=L, J=J, delta=delta, is_pbc=pbc, s)
     # h.prepare_hamiltonian()
     # h.print_matrix()
     # time_end = time()
     # print(f'Time: {time_end - time_start:0.4f} seconds')
     # print(f'{asizeof.asizeof(h.matrix) / 1_000_000:0.4f} MB')
-    #
+
     time_start = time()
-    # # up to L = 19, compared with other one L = 14
+    # # up to L = 19 (9.5 s, 754 MB), compared with older one L = 14
+    # #       L = 20 (21.3 s, 1568 MB)
+    # # for m=0, L=20 (4.3 s, 311 MB)
+    # #          L=22 (18.2 s, 1283 MB)
     hs = HamiltonianSandvik(L=L, J=J, delta=delta, is_pbc=pbc)
-    hs.construct_hamiltonian(magnetization=2)
-    hs.print_matrix()
+    lst = list(hs.choose_basis(m, k))
+    print(lst, len(lst))
+    # hs.construct_hamiltonian(magnetization=m)
+    # hs.print_matrix()
     time_end = time()
     print(f'Time: {time_end - time_start:0.4f} seconds')
     print(f'{asizeof.asizeof(hs.H_dict) / 1_000_000:0.4f} MB')
-    # for i in hs.magnetization_basis(magnetization=m):
-    #     print(f'{i}: {integer_to_bitstring(i, L)}')
-    # m_list = list(hs.magnetization_basis(magnetization=m))
-    # print(m_list, len(m_list))
-    # print(hs.count_number_of_magnetization_block_states(m))
-    c = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-    print(c)
-    print(c[[0, 1]][:, [0, 1]])
 
