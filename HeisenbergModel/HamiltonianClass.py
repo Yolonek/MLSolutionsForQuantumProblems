@@ -1,6 +1,7 @@
 import numpy as np
 import numba as nb
 import pyarma as pa
+import scipy.sparse as sp
 from pympler import asizeof
 from time import time
 from math import factorial
@@ -25,27 +26,21 @@ class HamiltonianSandvik:
         self.pbc: bool = is_pbc
         self.system_size: int = 2 ** L
         self.magnetization = None
-        self.momentum = None
         self.H_dict: defaultdict[tuple[int, int], float] = defaultdict(float)
 
     def reset_data(self):
         self.H_dict: defaultdict[tuple[int, int], float] = defaultdict(float)
         self.magnetization = None
 
-    def choose_basis(self, magnetization: int = None, momentum: int = None):
-        if magnetization is None and momentum is None:
+    def choose_basis(self, magnetization: int = None):
+        if magnetization is None:
             return range(self.system_size)
-        elif magnetization is not None and momentum is None:
-            return self.magnetization_basis(magnetization)
-        elif magnetization is None and momentum is not None:
-            return self.momentum_basis(momentum)
         else:
-            return self.momentum_basis(momentum, magnetization=magnetization)
+            return self.magnetization_basis(magnetization)
 
-    def construct_hamiltonian(self, magnetization: int = None, momentum: int = None):
-        basis = self.choose_basis(magnetization, momentum)
+    def construct_hamiltonian(self, magnetization: int = None, convert_indices: bool = False):
+        basis = self.choose_basis(magnetization)
         self.magnetization = magnetization
-        self.momentum = momentum
         for a in basis:
             a_bin = integer_to_bitarray(a, self.L)
             for i in range(self.L):
@@ -59,12 +54,11 @@ class HamiltonianSandvik:
                     self.H_dict[(a, a)] += 1
                 else:
                     self.H_dict[(a, a)] -= 1
-                    if self.momentum is not None:
-                        pass
-                    else:
-                        b = bitarray_to_integer(flip(a_bin, [i, j]))
-                        self.H_dict[(a, b)] = self.J / 2
+                    b = bitarray_to_integer(flip(a_bin, [i, j]))
+                    self.H_dict[(a, b)] = self.J / 2
             self.H_dict[(a, a)] *= self.delta * self.J / 4
+        if convert_indices:
+            self.convert_matrix_coordinates_to_block()
 
     def magnetization_basis(self, magnetization: int) -> Generator:
         for state in range(self.system_size):
@@ -74,20 +68,8 @@ class HamiltonianSandvik:
     def count_number_of_magnetization_block_states(self, magnetization: int) -> int:
         return len(list(self.magnetization_basis(magnetization)))
 
-    def momentum_basis(self, momentum: int, magnetization: int = 0, with_r: bool = False) -> Generator:
-        for state in self.magnetization_basis(magnetization):
-            representative = MomentumStatesCalculator(self.L, momentum).check_state_for_representatives(state)
-            if representative >= 0:
-                if with_r:
-                    yield state, representative
-                else:
-                    yield state
-
-    def count_number_of_momentum_block_states(self, k: int) -> int:
-        return len(list(self.momentum_basis(k)))
-
     def convert_matrix_coordinates_to_block(self):
-        basis = self.choose_basis(self.magnetization, self.momentum)
+        basis = list(self.choose_basis(self.magnetization))
         new_H_dict = defaultdict(float)
         for (i, j), value in self.H_dict.items():
             i_m = basis.index(i)
@@ -97,9 +79,14 @@ class HamiltonianSandvik:
                 new_H_dict[(i_m, basis.index(j))] = value
         self.H_dict = new_H_dict
 
+    def get_hamiltonian_as_sparse_matrix(self):
+        rows, cols, values = zip(*[(row, col, value) for (row, col), value in self.H_dict.items()])
+        n_rows, n_cols = max(rows) + 1, max(cols) + 1
+        return sp.coo_matrix((values, (rows, cols)), shape=(n_rows, n_cols)).tocsr()
+
     def get_hamiltonian_as_dense_matrix(self) -> np.ndarray:
-        if self.magnetization is not None or self.momentum is not None:
-            basis_length = len(list(self.choose_basis(self.magnetization, self.momentum)))
+        if self.magnetization is not None:
+            basis_length = len(list(self.choose_basis(self.magnetization)))
             hamiltonian = np.zeros((basis_length, basis_length))
         else:
             hamiltonian = np.zeros((self.system_size, self.system_size))
@@ -108,13 +95,13 @@ class HamiltonianSandvik:
         return hamiltonian
 
     def print_matrix(self):
-
         print(f'System size: {self.system_size} x {self.system_size}')
         print('Basis:')
         print(end=(9 - self.L) * ' ')
-        for basis_state in generate_basis_states(0, self.system_size, self.L,
-                                                 block=False if self.magnetization is None else True,
-                                                 total_spin=self.magnetization / 2 if self.magnetization is not None else 0):
+        for basis_state in generate_basis_states(
+                0, self.system_size, self.L,
+                block=False if self.magnetization is None else True,
+                total_spin=self.magnetization / 2 if self.magnetization is not None else 0):
             print(basis_state, end=(9 - self.L) * ' ')
         print('\n')
         #     pa.mat(self.get_hamiltonian_as_dense_matrix()[m_basis][:, m_basis]).print()
@@ -150,8 +137,6 @@ class MomentumStatesCalculator:
                 representative = temp_representative
                 num_of_translations = i
         return representative, num_of_translations
-
-
 
 
 class Hamiltonian:
@@ -302,4 +287,3 @@ if __name__ == '__main__':
     time_end = time()
     print(f'Time: {time_end - time_start:0.4f} seconds')
     print(f'{asizeof.asizeof(hs.H_dict) / 1_000_000:0.4f} MB')
-
