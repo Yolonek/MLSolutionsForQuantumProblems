@@ -12,6 +12,10 @@ def integer_to_bitstring(integer: int, length: int) -> str:
         return binary_number
 
 
+def bitstring_to_int(bitstring: str) -> int:
+    return int(bitstring, 2)
+
+
 def integer_to_bitarray(integer: int, length: int) -> bitarray:
     return bitarray(integer_to_bitstring(integer, length))
 
@@ -54,14 +58,9 @@ def shift_bits_of_integer(integer: int, length: int, shift: int = 1) -> int:
     return bitarray_to_integer(shift_bits(integer_to_bitarray(integer, length), shift))
 
 
-if __name__ == '__main__':
-    print(count_number_of_ones(16, 4))
-    print(count_ones_and_zeros_difference(0, 4))
-    print(shift_bits_of_integer(3, 8, -1))
+if __name__ == "__main__":
+    print(str(integer_to_bitstring(15, 8)))
+    print(bitstring_to_int('00001111'))
 
-    a = bitarray('010')
-    print(shift_bits(a, -1))
-    print(bitarray_to_integer(a))
-    print(bitarray_to_integer(shift_bits(a, -1)))
-    print(shift_bits(a, -3))
+
 
