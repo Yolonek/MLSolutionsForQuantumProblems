@@ -1,3 +1,7 @@
+from Bitarray import integer_to_bitstring
+from Operator import s_total
+
+
 def generate_basis_states(start: int, stop: int, length: int,
                           block: bool = False, total_spin: int = 0):
     count = start

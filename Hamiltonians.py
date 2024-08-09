@@ -1,24 +1,82 @@
 import numpy as np
-import numba as nb
 import pyarma as pa
+import jax.numpy as jnp
 import scipy.sparse as sp
 from pympler import asizeof
 from time import time
-from math import factorial
-from typing import Union, List, Generator
+from collections.abc import Sequence
+from typing import Generator, Optional
 from collections import defaultdict
-from CommonFunctions import generate_basis_states
-from OperatorFunctions import s_z, calculate_interaction
-from BitFunctions import (integer_to_bitarray,
-                          integer_to_bitstring,
-                          bitarray_to_integer, flip,
-                          count_ones_and_zeros_difference,
-                          count_number_of_ones,
-                          shift_bits_of_integer)
+from Hilbert import generate_basis_states
+from Operator import s_z, calculate_interaction
+import netket as nk
+from netket.operator import GraphOperator, LocalOperator
+from netket.operator.spin import sigmax, sigmay, sigmaz
+from netket.hilbert import AbstractHilbert
+from netket.graph import KitaevHoneycomb
+from netket.utils.types import DType
+from Bitarray import (integer_to_bitarray,
+                      bitarray_to_integer, flip,
+                      count_ones_and_zeros_difference,
+                      shift_bits_of_integer)
 
 
-class HamiltonianSandvik:
+class Kitaev(GraphOperator):
+    def __init__(
+            self,
+            hilbert: AbstractHilbert,
+            kitaev: KitaevHoneycomb,
+            J: Sequence[float, float, float] = (0.1, 0.1, 0.1),
+            dtype: Optional[DType] = None,
+    ):
+        Jx, Jy, Jz = J
+        self._Ji = J
 
+        sx_sx = np.array([[0, 0, 0, 1],
+                          [0, 0, 1, 0],
+                          [0, 1, 0, 0],
+                          [1, 0, 0, 0]])
+
+        sy_sy = np.array([[0, 0, 0, -1],
+                          [0, 0, 1, 0],
+                          [0, 1, 0, 0],
+                          [-1, 0, 0, 0]])
+
+        sz_sz = np.array([[1, 0, 0, 0],
+                          [0, -1, 0, 0],
+                          [0, 0, -1, 0],
+                          [0, 0, 0, 1]])
+
+        bond_ops = [-Jx * sx_sx, -Jy * sy_sy, -Jz * sz_sz]
+        bond_ops_colors = [0, 1, 2]
+
+        super().__init__(
+            hilbert,
+            kitaev,
+            bond_ops=bond_ops,
+            bond_ops_colors=bond_ops_colors,
+            dtype=dtype
+        )
+
+    @property
+    def Jx(self):
+        return self._Ji[0]
+
+    @property
+    def Jy(self):
+        return self._Ji[1]
+
+    @property
+    def Jz(self):
+        return self._Ji[2]
+
+    def __repr__(self):
+        return (f'Kitaev(Jx={self._Ji[0]}, Jy={self._Ji[1]}, Jz={self._Ji[2]}, '
+                f'dim={self.hilbert.size}, '
+                f'#acting on={self.graph.n_edges} locations)')
+
+
+class Sandvik:
     def __init__(self, L: int, J: float, delta: float, is_pbc: bool = False):
         self.L: int = L
         self.J: float = J
@@ -38,7 +96,9 @@ class HamiltonianSandvik:
         else:
             return self.magnetization_basis(magnetization)
 
-    def construct_hamiltonian(self, magnetization: int = None, convert_indices: bool = False):
+    def construct_hamiltonian(self,
+                              magnetization: int = None,
+                              convert_indices: bool = False):
         basis = self.choose_basis(magnetization)
         self.magnetization = magnetization
         for a in basis:
@@ -259,6 +319,20 @@ class Hamiltonian:
         self._prepare_hamiltonian_k()
 
 
+def KitaevHamiltonian(hilbert: nk.hilbert.spin.Spin,
+                      kitaev: KitaevHoneycomb,
+                      J: Sequence[float, float, float]
+                      ) -> LocalOperator:
+    Jx, Jy, Jz = J
+    Ji = {0: Jx, 1: Jy, 2: Jz}
+    operators = {0: sigmax, 1: sigmay, 2: sigmaz}
+    hamiltonian = LocalOperator(hilbert, dtype=jnp.complex128)
+    for (i, j), color in zip(kitaev.edges(), kitaev.edge_colors):
+        operator = operators[color]
+        hamiltonian += -Ji[color] * (operator(hilbert, i) @ operator(hilbert, j))
+    return hamiltonian
+
+
 if __name__ == '__main__':
     L, J, delta = 6, 1, 1
     pbc = False
@@ -279,7 +353,7 @@ if __name__ == '__main__':
     # #       L = 20 (21.3 s, 1568 MB)
     # # for m=0, L=20 (4.3 s, 311 MB)
     # #          L=22 (18.2 s, 1283 MB)
-    hs = HamiltonianSandvik(L=L, J=J, delta=delta, is_pbc=pbc)
+    hs = Sandvik(L=L, J=J, delta=delta, is_pbc=pbc)
     lst = list(hs.choose_basis(m, k))
     print(lst, len(lst))
     # hs.construct_hamiltonian(magnetization=m)
