@@ -1,6 +1,10 @@
 import mplcyberpunk
+import pickle
+import jax
+from flax.core import FrozenDict
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
+from netket.vqs import MCState
 
 
 def enhance_plot(figure, axes, glow=False, alpha_gradient=0, lines=True, dpi=100):
@@ -53,3 +57,40 @@ def draw_kitaev_honeycomb(lattice, ax=None, node_color='powderblue', node_size=3
                     for color, label in zip(edge_colors.values(), edge_labels)]
     ax.legend(handles=legend_lines, loc='upper left')
     return ax
+
+
+def plot_state_optimization(epochs, optimization_params, ax,
+                            evals=None, colors=None,
+                            title=None, **scatter_params):
+    if evals is not None:
+        ax.hlines(evals, 0, epochs, color='black', label='Exact states')
+    optimization_iters, optimization_list = optimization_params
+    for i, (iters, optimization) in enumerate(zip(optimization_iters, optimization_list)):
+        ax.scatter(iters, optimization,
+                   label=f'Ground state' if i == 0 else f'{i} excited state',
+                   color=colors[i] if colors else None, **scatter_params)
+    ax.set(xlabel='Iteration', ylabel='Energy', title=title)
+    ax.legend()
+    return ax
+
+
+def save_variational_state_parameters(state_params, file_path):
+    with open(file_path, 'wb') as file:
+        pickle.dump(state_params, file)
+
+
+def load_variational_state_parameters(file_path):
+    with open(file_path, 'rb') as file:
+        return pickle.load(file)
+
+
+def save_variational_state(state, file_path):
+    save_variational_state_parameters(FrozenDict(state.parameters), file_path)
+
+
+def load_variational_state(file_path, sampler, machine, **state_params):
+    state = MCState(sampler, machine, **state_params)
+    state.init_parameters(jax.nn.initializers.normal(stddev=0.25))
+    state.parameters = load_variational_state_parameters(file_path)
+    return state
+

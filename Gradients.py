@@ -50,7 +50,7 @@ def penalty_based_expect_and_grad(
     return O, O_grad
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3))
+@partial(jax.jit, static_argnums=(0, 1, 2, 11))
 def penalty_based_grad_expect_hermitian(
         local_value_kernel,
         penalty_kernel,

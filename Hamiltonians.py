@@ -26,7 +26,7 @@ class Kitaev(GraphOperator):
             self,
             hilbert: AbstractHilbert,
             kitaev: KitaevHoneycomb,
-            J: Sequence[float, float, float] = (0.1, 0.1, 0.1),
+            J: Sequence[float, float, float] = (1., 1., 1.),
             dtype: Optional[DType] = None,
     ):
         Jx, Jy, Jz = J
