@@ -319,7 +319,7 @@ class Hamiltonian:
         self._prepare_hamiltonian_k()
 
 
-def KitaevHamiltonian(hilbert: nk.hilbert.spin.Spin,
+def KitaevHamiltonian(hilbert: nk.hilbert.Spin,
                       kitaev: KitaevHoneycomb,
                       J: Sequence[float, float, float]
                       ) -> LocalOperator:

@@ -74,6 +74,11 @@ def plot_state_optimization(epochs, optimization_params, ax,
     return ax
 
 
+def plot_spectrum(evals, axes, title=None):
+    axes.hlines(evals, 0, 1, color='blue')
+    axes.set(ylabel='$\epsilon$', title=title, xticks=[])
+
+
 def save_variational_state_parameters(state_params, file_path):
     with open(file_path, 'wb') as file:
         pickle.dump(state_params, file)
