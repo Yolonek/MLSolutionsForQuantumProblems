@@ -1,10 +1,31 @@
 import mplcyberpunk
 import pickle
 import jax
+import netket as nk
+import numpy as np
+from itertools import product
+from tqdm import tqdm
 from flax.core import FrozenDict
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 from netket.vqs import MCState
+from Hamiltonians import Kitaev
+
+
+def compute_energy_gap(hamiltonian):
+    evals = nk.exact.lanczos_ed(hamiltonian, k=2, compute_eigenvectors=False)
+    return evals[1] - evals[0]
+
+
+def compute_kitaev_phase_diagram(kitaev_graph, kitaev_hi, J_scale):
+    J_product = np.array(list(product(J_scale, repeat=3)))
+    J_product /= np.sum(J_product, axis=1, keepdims=True)
+    J_product = np.unique(J_product, axis=0)
+    gaps = np.zeros(len(J_product))
+    for i, J_vec in tqdm(enumerate(J_product)):
+        hamiltonian = Kitaev(kitaev_hi, kitaev=kitaev_graph, J=J_vec)
+        gaps[i] = compute_energy_gap(hamiltonian)
+    return J_product, gaps
 
 
 def enhance_plot(figure, axes, glow=False, alpha_gradient=0, lines=True, dpi=100):
