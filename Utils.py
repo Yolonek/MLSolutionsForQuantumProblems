@@ -74,9 +74,11 @@ def plot_state_optimization(epochs, optimization_params, ax,
     return ax
 
 
-def plot_spectrum(evals, axes, title=None):
-    axes.hlines(evals, 0, 1, color='blue')
+def plot_spectrum(evals, axes, title=None, linewidth=0.3):
+    axes.hlines(evals, 0, len(evals), color='blue', linewidth=linewidth)
+    axes.scatter(range(len(evals)), evals, color='black', s=1, zorder=3)
     axes.set(ylabel='$\epsilon$', title=title, xticks=[])
+    axes.yaxis.label.set(rotation='horizontal', ha='right')
 
 
 def save_variational_state_parameters(state_params, file_path):
