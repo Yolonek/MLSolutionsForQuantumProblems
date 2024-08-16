@@ -1,9 +1,11 @@
 import numpy as np
+import numba as nb
 import pyarma as pa
 import jax.numpy as jnp
 import scipy.sparse as sp
 from pympler import asizeof
 from time import time
+from scipy.ndimage import convolve, generate_binary_structure
 from collections.abc import Sequence
 from typing import Generator, Optional
 from collections import defaultdict
@@ -331,6 +333,72 @@ def KitaevHamiltonian(hilbert: nk.hilbert.Spin,
         operator = operators[color]
         hamiltonian += -Ji[color] * (operator(hilbert, i) @ operator(hilbert, j))
     return hamiltonian
+
+
+class IsingGrid:
+    def __init__(self, L, J):
+        self.L = L
+        self.J = J
+        self.lattice = None
+        self.energy = 0
+
+    def set_lattice(self, lattice):
+        self.lattice = lattice.astype(np.int8)
+
+    def initialize_grid(self, negative=False):
+        probability_grid = np.random.random((self.L, self.L))
+        probability = 0.2 if negative else 0.8
+        self.lattice = np.where(probability_grid >= probability, 1, -1).astype(np.int8)
+
+    def get_system_energy(self):
+        kernel = generate_binary_structure(2, 1)
+        kernel[1][1] = False
+        convolution = -self.lattice * convolve(self.lattice, kernel, mode='constant', cval=0)
+        self.energy = (convolution_sum := convolution.sum())
+        return convolution_sum
+
+    def metropolis(self, timestamp, T, negative=False):
+        self.initialize_grid(negative=negative)
+        self.energy = self.get_system_energy()
+        self.lattice, spin_sum, system_energy = metropolis_ising(
+            self.lattice, timestamp, self.J, T, self.energy)
+        return self.lattice, spin_sum, system_energy
+
+
+@nb.njit()
+def metropolis_ising(grid, timestamp, J, T, energy):
+    N = grid.shape[0]
+    spin_grid = grid.copy()
+    spin_sum = np.zeros(timestamp)
+    system_energy = np.zeros(timestamp)
+    for t in range(timestamp):
+        x, y = np.random.randint(0, high=N, size=2)
+        spin_init = spin_grid[x, y]
+        spin_flip = -spin_init
+        E_init, E_flip = 0, 0
+        if x > 0:
+            E_init += -spin_init * spin_grid[x - 1, y]
+            E_flip += -spin_flip * spin_grid[x - 1, y]
+        if x < N - 1:
+            E_init += -spin_init * spin_grid[x + 1, y]
+            E_flip += -spin_flip * spin_grid[x + 1, y]
+        if y > 0:
+            E_init += -spin_init * spin_grid[x, y - 1]
+            E_flip += -spin_flip * spin_grid[x, y - 1]
+        if y < N - 1:
+            E_init += -spin_init * spin_grid[x, y + 1]
+            E_flip += -spin_flip * spin_grid[x, y + 1]
+        dE = E_flip - E_init
+        if dE > 0 and np.random.rand() < np.exp(-(J * dE) / T):
+            spin_grid[x, y] = spin_flip
+            energy += dE
+        elif dE <= 0:
+            spin_grid[x, y] = spin_flip
+            energy += dE
+
+        spin_sum[t] = spin_grid.sum()
+        system_energy[t] = energy
+    return spin_grid, spin_sum, system_energy
 
 
 if __name__ == '__main__':
