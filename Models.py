@@ -119,6 +119,7 @@ class MultiHeadAttention(nn.Module):
         # print(attention_outputs.shape)
         return nn.Dense(features=self.head_dim * self.num_heads)(attention_outputs)
 
+
 class TransformerLayer(nn.Module):
     num_heads: int
     head_dim: int

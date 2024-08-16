@@ -345,9 +345,8 @@ class IsingGrid:
     def set_lattice(self, lattice):
         self.lattice = lattice.astype(np.int8)
 
-    def initialize_grid(self, negative=False):
+    def initialize_grid(self, probability=0.5):
         probability_grid = np.random.random((self.L, self.L))
-        probability = 0.2 if negative else 0.8
         self.lattice = np.where(probability_grid >= probability, 1, -1).astype(np.int8)
 
     def get_system_energy(self):
@@ -357,8 +356,9 @@ class IsingGrid:
         self.energy = (convolution_sum := convolution.sum())
         return convolution_sum
 
-    def metropolis(self, timestamp, T, negative=False):
-        self.initialize_grid(negative=negative)
+    def metropolis(self, timestamp, T, probability=0.5, initialize=True):
+        if initialize:
+            self.initialize_grid(probability=probability)
         self.energy = self.get_system_energy()
         self.lattice, spin_sum, system_energy = metropolis_ising(
             self.lattice, timestamp, self.J, T, self.energy)
