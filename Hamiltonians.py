@@ -29,8 +29,10 @@ class Kitaev(GraphOperator):
             hilbert: AbstractHilbert,
             kitaev: KitaevHoneycomb,
             J: Sequence[float, float, float] = (1., 1., 1.),
+            add_exchange: Optional[bool] = None,
             dtype: Optional[DType] = None,
     ):
+
         Jx, Jy, Jz = J
         self._Ji = J
 
@@ -49,7 +51,19 @@ class Kitaev(GraphOperator):
                           [0, 0, -1, 0],
                           [0, 0, 0, 1]])
 
-        bond_ops = [-Jx * sx_sx, -Jy * sy_sy, -Jz * sz_sz]
+        exchange = np.array(
+            [
+                [0, 0, 0, 0],
+                [0, 0, 2, 0],
+                [0, 2, 0, 0],
+                [0, 0, 0, 0],
+            ]
+        )
+
+        bond_ops = [-Jx * (sx_sx + exchange if add_exchange else sx_sx),
+                    -Jy * (sy_sy + exchange if add_exchange else sy_sy),
+                    -Jz * (sz_sz + exchange if add_exchange else sz_sz)]
+        # bond_ops = [-Jx * sx_sx, -Jy * sy_sy, -Jz * sz_sz]
         bond_ops_colors = [0, 1, 2]
 
         super().__init__(
