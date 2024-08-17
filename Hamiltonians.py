@@ -15,12 +15,29 @@ import netket as nk
 from netket.operator import GraphOperator, LocalOperator
 from netket.operator.spin import sigmax, sigmay, sigmaz
 from netket.hilbert import AbstractHilbert
-from netket.graph import KitaevHoneycomb
+from netket.graph import KitaevHoneycomb, AbstractGraph
 from netket.utils.types import DType
 from Bitarray import (integer_to_bitarray,
                       bitarray_to_integer, flip,
                       count_ones_and_zeros_difference,
                       shift_bits_of_integer)
+
+SX_SX = np.array([[0, 0, 0, 1],
+                  [0, 0, 1, 0],
+                  [0, 1, 0, 0],
+                  [1, 0, 0, 0]])
+
+SY_SY = np.array([[0, 0, 0, -1],
+                  [0, 0, 1, 0],
+                  [0, 1, 0, 0],
+                  [-1, 0, 0, 0]])
+
+SZ_SZ = np.array([[1, 0, 0, 0],
+                  [0, -1, 0, 0],
+                  [0, 0, -1, 0],
+                  [0, 0, 0, 1]])
+
+EXCHANGE = SX_SX + SY_SY
 
 
 class Kitaev(GraphOperator):
@@ -29,41 +46,13 @@ class Kitaev(GraphOperator):
             hilbert: AbstractHilbert,
             kitaev: KitaevHoneycomb,
             J: Sequence[float, float, float] = (1., 1., 1.),
-            add_exchange: Optional[bool] = None,
             dtype: Optional[DType] = None,
     ):
 
         Jx, Jy, Jz = J
         self._Ji = J
 
-        sx_sx = np.array([[0, 0, 0, 1],
-                          [0, 0, 1, 0],
-                          [0, 1, 0, 0],
-                          [1, 0, 0, 0]])
-
-        sy_sy = np.array([[0, 0, 0, -1],
-                          [0, 0, 1, 0],
-                          [0, 1, 0, 0],
-                          [-1, 0, 0, 0]])
-
-        sz_sz = np.array([[1, 0, 0, 0],
-                          [0, -1, 0, 0],
-                          [0, 0, -1, 0],
-                          [0, 0, 0, 1]])
-
-        exchange = np.array(
-            [
-                [0, 0, 0, 0],
-                [0, 0, 2, 0],
-                [0, 2, 0, 0],
-                [0, 0, 0, 0],
-            ]
-        )
-
-        bond_ops = [-Jx * (sx_sx + exchange if add_exchange else sx_sx),
-                    -Jy * (sy_sy + exchange if add_exchange else sy_sy),
-                    -Jz * (sz_sz + exchange if add_exchange else sz_sz)]
-        # bond_ops = [-Jx * sx_sx, -Jy * sy_sy, -Jz * sz_sz]
+        bond_ops = [-Jx * SX_SX, -Jy * SY_SY, -Jz * SZ_SZ]
         bond_ops_colors = [0, 1, 2]
 
         super().__init__(
@@ -88,6 +77,78 @@ class Kitaev(GraphOperator):
 
     def __repr__(self):
         return (f'Kitaev(Jx={self._Ji[0]}, Jy={self._Ji[1]}, Jz={self._Ji[2]}, '
+                f'dim={self.hilbert.size}, '
+                f'#acting on={self.graph.n_edges} locations)')
+
+
+class HeisenbergXYZ(GraphOperator):
+    def __init__(
+            self,
+            hilbert: AbstractHilbert,
+            graph: AbstractGraph,
+            J: Sequence[float, float, float] = (1., 1., 1.),
+            dtype: Optional[DType] = None,
+    ):
+        Jx, Jy, Jz = J
+        self._Ji = J
+
+        bond_ops = [-(Jx * SX_SX + Jy * SY_SY + Jz * SZ_SZ)]
+        super().__init__(
+            hilbert,
+            graph,
+            bond_ops=bond_ops,
+            bond_ops_colors=[],
+            dtype=dtype
+        )
+
+    @property
+    def Jx(self):
+        return self._Ji[0]
+
+    @property
+    def Jy(self):
+        return self._Ji[1]
+
+    @property
+    def Jz(self):
+        return self._Ji[2]
+
+    def __repr__(self):
+        return (f'Heisenberg(Jx={self._Ji[0]}, Jy={self._Ji[1]}, Jz={self._Ji[2]}, '
+                f'dim={self.hilbert.size}, '
+                f'#acting on={self.graph.n_edges} locations)')
+
+
+class XY(GraphOperator):
+    def __init__(
+            self,
+            hilbert: AbstractHilbert,
+            graph: AbstractGraph,
+            J: float = 1.,
+            gamma: Optional[float] = None,
+            dtype: Optional[DType] = None,
+    ):
+        self._J = J
+
+        if gamma is None:
+            bond_ops = [-J * (SX_SX + SY_SY)]
+        else:
+            bond_ops = [-J * (np.sin(gamma) * SX_SX + np.cos(gamma) * SY_SY)]
+
+        super().__init__(
+            hilbert,
+            graph,
+            bond_ops=bond_ops,
+            bond_ops_colors=[],
+            dtype=dtype
+        )
+
+    @property
+    def J(self):
+        return self._J
+
+    def __repr__(self):
+        return (f'XY(J={self._J}, '
                 f'dim={self.hilbert.size}, '
                 f'#acting on={self.graph.n_edges} locations)')
 
@@ -215,7 +276,7 @@ class MomentumStatesCalculator:
         return representative, num_of_translations
 
 
-class Hamiltonian:
+class HeisenbergHamiltonian:
 
     def __init__(self, L: int, J: float, delta: float, is_pbc=False):
         self.L: int = L
