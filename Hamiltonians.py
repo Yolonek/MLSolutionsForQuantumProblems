@@ -39,6 +39,9 @@ SZ_SZ = np.array([[1, 0, 0, 0],
 
 EXCHANGE = SX_SX + SY_SY
 
+SZ = np.array([[1, 0],
+               [0, -1]])
+
 
 class Kitaev(GraphOperator):
     def __init__(
@@ -97,7 +100,6 @@ class HeisenbergXYZ(GraphOperator):
             hilbert,
             graph,
             bond_ops=bond_ops,
-            bond_ops_colors=[],
             dtype=dtype
         )
 
@@ -119,27 +121,29 @@ class HeisenbergXYZ(GraphOperator):
                 f'#acting on={self.graph.n_edges} locations)')
 
 
-class XY(GraphOperator):
+class HeisenbergAnisotropic(GraphOperator):
     def __init__(
             self,
             hilbert: AbstractHilbert,
             graph: AbstractGraph,
             J: float = 1.,
-            gamma: Optional[float] = None,
+            delta: Optional[float, float] = None,
             dtype: Optional[DType] = None,
     ):
         self._J = J
+        self._delta = delta
 
-        if gamma is None:
-            bond_ops = [-J * (SX_SX + SY_SY)]
+        if delta is None:
+            bond_ops = [-J * (SX_SX + SY_SY + SZ_SZ)]
         else:
-            bond_ops = [-J * (np.sin(gamma) * SX_SX + np.cos(gamma) * SY_SY)]
+            delta_y, delta_z = delta
+            # For delta = (1, 0) we get quantum XY model
+            bond_ops = [-J * (SX_SX + delta_y * SY_SY + delta_z * SZ_SZ)]
 
         super().__init__(
             hilbert,
             graph,
             bond_ops=bond_ops,
-            bond_ops_colors=[],
             dtype=dtype
         )
 
@@ -148,7 +152,38 @@ class XY(GraphOperator):
         return self._J
 
     def __repr__(self):
-        return (f'XY(J={self._J}, '
+        d = ''
+        if self._delta:
+            d = f'Delta_Sy={self._delta[0]}, Delta_Sz={self._delta[1]}, '
+        return (f'Heisenberg(J={self._J}, {d}'
+                f'dim={self.hilbert.size}, '
+                f'#acting on={self.graph.n_edges} locations)')
+
+
+class TransverseMagneticField(GraphOperator):
+    def __init__(
+            self,
+            hilbert: AbstractHilbert,
+            graph: AbstractGraph,
+            h: float = 1.,
+            dtype: Optional[DType] = None,
+    ):
+        self._h = h
+        site_ops = [-h * SZ]
+
+        super().__init__(
+            hilbert,
+            graph,
+            site_ops=site_ops,
+            dtype=dtype
+        )
+
+    @property
+    def h(self):
+        return self._h
+
+    def __repr__(self):
+        return (f'TransverseMagneticField(h={self._h}, '
                 f'dim={self.hilbert.size}, '
                 f'#acting on={self.graph.n_edges} locations)')
 
