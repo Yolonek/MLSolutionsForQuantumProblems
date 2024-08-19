@@ -7,7 +7,7 @@ from pympler import asizeof
 from time import time
 from scipy.ndimage import convolve, generate_binary_structure
 from collections.abc import Sequence
-from typing import Generator, Optional
+from typing import Generator, Optional, Union
 from collections import defaultdict
 from Hilbert import generate_basis_states
 from Operator import s_z, calculate_interaction
@@ -21,6 +21,21 @@ from Bitarray import (integer_to_bitarray,
                       bitarray_to_integer, flip,
                       count_ones_and_zeros_difference,
                       shift_bits_of_integer)
+
+
+SX = np.array([[0, 1],
+               [1, 0]])
+
+SY = np.array([[0, -1j],
+               [1j, 0]])
+
+SZ = np.array([[1, 0],
+               [0, -1]])
+
+IDENTITY = np.array([[1, 0, 0, 0],
+                     [0, 1, 0, 0],
+                     [0, 0, 1, 0],
+                     [0, 0, 0, 1]])
 
 SX_SX = np.array([[0, 0, 0, 1],
                   [0, 0, 1, 0],
@@ -39,15 +54,12 @@ SZ_SZ = np.array([[1, 0, 0, 0],
 
 EXCHANGE = SX_SX + SY_SY
 
-SZ = np.array([[1, 0],
-               [0, -1]])
-
 
 class Kitaev(GraphOperator):
     def __init__(
             self,
             hilbert: AbstractHilbert,
-            kitaev: KitaevHoneycomb,
+            graph: KitaevHoneycomb,
             J: Sequence[float, float, float] = (1., 1., 1.),
             dtype: Optional[DType] = None,
     ):
@@ -60,7 +72,7 @@ class Kitaev(GraphOperator):
 
         super().__init__(
             hilbert,
-            kitaev,
+            graph,
             bond_ops=bond_ops,
             bond_ops_colors=bond_ops_colors,
             dtype=dtype
@@ -84,61 +96,22 @@ class Kitaev(GraphOperator):
                 f'#acting on={self.graph.n_edges} locations)')
 
 
-class HeisenbergXYZ(GraphOperator):
+class Heisenberg(GraphOperator):
     def __init__(
             self,
             hilbert: AbstractHilbert,
             graph: AbstractGraph,
-            J: Sequence[float, float, float] = (1., 1., 1.),
-            dtype: Optional[DType] = None,
-    ):
-        Jx, Jy, Jz = J
-        self._Ji = J
-
-        bond_ops = [-(Jx * SX_SX + Jy * SY_SY + Jz * SZ_SZ)]
-        super().__init__(
-            hilbert,
-            graph,
-            bond_ops=bond_ops,
-            dtype=dtype
-        )
-
-    @property
-    def Jx(self):
-        return self._Ji[0]
-
-    @property
-    def Jy(self):
-        return self._Ji[1]
-
-    @property
-    def Jz(self):
-        return self._Ji[2]
-
-    def __repr__(self):
-        return (f'Heisenberg(Jx={self._Ji[0]}, Jy={self._Ji[1]}, Jz={self._Ji[2]}, '
-                f'dim={self.hilbert.size}, '
-                f'#acting on={self.graph.n_edges} locations)')
-
-
-class HeisenbergAnisotropic(GraphOperator):
-    def __init__(
-            self,
-            hilbert: AbstractHilbert,
-            graph: AbstractGraph,
-            J: float = 1.,
-            delta: Optional[float, float] = None,
+            J: Union[float, Sequence[float, float, float]] = 1.,
             dtype: Optional[DType] = None,
     ):
         self._J = J
-        self._delta = delta
 
-        if delta is None:
+        if isinstance(J, float):
             bond_ops = [-J * (SX_SX + SY_SY + SZ_SZ)]
         else:
-            delta_y, delta_z = delta
-            # For delta = (1, 0) we get quantum XY model
-            bond_ops = [-J * (SX_SX + delta_y * SY_SY + delta_z * SZ_SZ)]
+            assert len(J) == 3
+            Jx, Jy, Jz = J
+            bond_ops = [-(Jx * SX_SX + Jy * SY_SY + Jz * SZ_SZ)]
 
         super().__init__(
             hilbert,
@@ -152,29 +125,115 @@ class HeisenbergAnisotropic(GraphOperator):
         return self._J
 
     def __repr__(self):
-        d = ''
-        if self._delta:
-            d = f'Delta_Sy={self._delta[0]}, Delta_Sz={self._delta[1]}, '
-        return (f'Heisenberg(J={self._J}, {d}'
+        if isinstance(self._J, float):
+            line1 = f'J={self._J}'
+        else:
+            line1 = f'Jx={self._J[0]}, Jy={self._J[1]}, Jz={self._J[2]}'
+        return (f'Heisenberg({line1}, '
                 f'dim={self.hilbert.size}, '
                 f'#acting on={self.graph.n_edges} locations)')
 
 
-class TransverseMagneticField(GraphOperator):
+class HeisenbergAnisotropic(GraphOperator):
     def __init__(
             self,
             hilbert: AbstractHilbert,
             graph: AbstractGraph,
-            h: float = 1.,
+            J: float = 1.,
+            delta: float = 1.,
+            dtype: Optional[DType] = None,
+    ):
+        self._J = J
+        self._delta = delta
+
+        bond_ops = [-J * (SX_SX + SY_SY + delta * SZ_SZ)]
+        super().__init__(
+            hilbert,
+            graph,
+            bond_ops=bond_ops,
+            dtype=dtype
+        )
+
+    @property
+    def J(self):
+        return self._J
+
+    @property
+    def delta(self):
+        return self._delta
+
+    def __repr__(self):
+        return (f'Heisenberg(J={self._J}, delta={self._delta}, '
+                f'dim={self.hilbert.size}, '
+                f'#acting on={self.graph.n_edges} locations)')
+
+
+class XY(GraphOperator):
+    def __init__(
+            self,
+            hilbert: AbstractHilbert,
+            graph: AbstractGraph,
+            J: float = 1.,
+            delta: [float, Sequence[float, float]] = 0.,
+            dtype: Optional[DType] = None,
+    ):
+        self._J = J
+        self._delta = delta
+
+        if isinstance(delta, float):
+            bond_ops = [-J * ((1 - delta) * SX_SX + (1 + delta) * SY_SY)]
+        else:
+            assert len(delta) == 2
+            delta_x, delta_y = delta
+            bond_ops = [-J * (delta_x * SX_SX + delta_y * SY_SY)]
+
+        super().__init__(
+            hilbert,
+            graph,
+            bond_ops=bond_ops,
+            dtype=dtype
+        )
+
+    @property
+    def J(self):
+        return self._J
+
+    @property
+    def delta(self):
+        return self._delta
+
+    def __repr__(self):
+        if isinstance(self._delta, float):
+            line = f'delta={self._delta}'
+        else:
+            line = f'delta_x={self._delta[0]}, delta_y={self._delta[1]}'
+        return (f'Heisenberg(J={self._J}, {line}, '
+                f'dim={self.hilbert.size}, '
+                f'#acting on={self.graph.n_edges} locations)')
+
+
+class MagneticField(GraphOperator):
+    def __init__(
+            self,
+            hilbert: AbstractHilbert,
+            graph: AbstractGraph,
+            h: Union[float, Sequence[float, float, float]] = 1.,
             dtype: Optional[DType] = None,
     ):
         self._h = h
-        site_ops = [-h * SZ]
+
+        if isinstance(h, float):
+            site_ops = [-h * SZ]
+        else:
+            assert len(h) == 3
+            hx, hy, hz = h
+            site_ops = [-hx * SX + -hy * SY + -hz * SZ]
 
         super().__init__(
             hilbert,
             graph,
             site_ops=site_ops,
+            bond_ops=[IDENTITY],
             dtype=dtype
         )
 
@@ -183,7 +242,11 @@ class TransverseMagneticField(GraphOperator):
         return self._h
 
     def __repr__(self):
-        return (f'TransverseMagneticField(h={self._h}, '
+        if isinstance(self._h, float):
+            line = f'TransverseMagneticField(h={self._h}'
+        else:
+            line = f'MagneticField(hx={self._h[0]}, hy={self._h[1]}, hz={self._h[2]}'
+        return (f'{line}, '
                 f'dim={self.hilbert.size}, '
                 f'#acting on={self.graph.n_edges} locations)')
 

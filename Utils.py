@@ -23,7 +23,7 @@ def compute_kitaev_phase_diagram(kitaev_graph, kitaev_hi, J_scale):
     J_product = np.unique(J_product, axis=0)
     gaps = np.zeros(len(J_product))
     for i, J_vec in tqdm(enumerate(J_product)):
-        hamiltonian = Kitaev(kitaev_hi, kitaev=kitaev_graph, J=J_vec)
+        hamiltonian = Kitaev(kitaev_hi, graph=kitaev_graph, J=J_vec)
         gaps[i] = compute_energy_gap(hamiltonian)
     return J_product, gaps
 
