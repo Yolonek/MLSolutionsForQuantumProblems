@@ -101,17 +101,17 @@ class Heisenberg(GraphOperator):
             self,
             hilbert: AbstractHilbert,
             graph: AbstractGraph,
-            J: Union[float, Sequence[float, float, float]] = 1.,
+            J: Union[float, int, Sequence[float, float, float]] = 1.,
             dtype: Optional[DType] = None,
     ):
         self._J = J
 
-        if isinstance(J, float):
-            bond_ops = [-J * (SX_SX + SY_SY + SZ_SZ)]
+        if isinstance(J, (float, int)):
+            bond_ops = [J * (SX_SX + SY_SY + SZ_SZ)]
         else:
             assert len(J) == 3
             Jx, Jy, Jz = J
-            bond_ops = [-(Jx * SX_SX + Jy * SY_SY + Jz * SZ_SZ)]
+            bond_ops = [Jx * SX_SX + Jy * SY_SY + Jz * SZ_SZ]
 
         super().__init__(
             hilbert,
@@ -125,7 +125,7 @@ class Heisenberg(GraphOperator):
         return self._J
 
     def __repr__(self):
-        if isinstance(self._J, float):
+        if isinstance(self._J, (float, int)):
             line1 = f'J={self._J}'
         else:
             line1 = f'Jx={self._J[0]}, Jy={self._J[1]}, Jz={self._J[2]}'
