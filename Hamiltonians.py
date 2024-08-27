@@ -1,6 +1,6 @@
 import numpy as np
 import numba as nb
-import pyarma as pa
+# import pyarma as pa
 import jax.numpy as jnp
 import scipy.sparse as sp
 from pympler import asizeof
@@ -340,7 +340,7 @@ class Sandvik:
             print(basis_state, end=(9 - self.L) * ' ')
         print('\n')
         #     pa.mat(self.get_hamiltonian_as_dense_matrix()[m_basis][:, m_basis]).print()
-        pa.mat(self.get_hamiltonian_as_dense_matrix()).print()
+        # pa.mat(self.get_hamiltonian_as_dense_matrix()).print()
 
 
 class MomentumStatesCalculator:
@@ -428,7 +428,7 @@ class HeisenbergHamiltonian:
         for basis_state in self.get_basis():
             print(basis_state, end=(9 - self.L) * ' ')
         print('\n')
-        pa.mat(self.matrix).print()
+        # pa.mat(self.matrix).print()
 
     def plot_data(self, matrix=None, axes=None):
         if axes:
