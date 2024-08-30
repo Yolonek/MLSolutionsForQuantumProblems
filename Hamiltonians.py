@@ -91,7 +91,7 @@ class Kitaev(GraphOperator):
         return self._Ji[2]
 
     def __repr__(self):
-        return (f'Kitaev(Jx={self._Ji[0]}, Jy={self._Ji[1]}, Jz={self._Ji[2]}, '
+        return (f'Kitaev(Jx={self._Ji[0]:.3f}, Jy={self._Ji[1]:.3f}, Jz={self._Ji[2]:.3f}, '
                 f'dim={self.hilbert.size}, '
                 f'#acting on={self.graph.n_edges} locations)')
 
